@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Server {
+
     private final ExecutorService threadPool;
     private final Map<String, Map<String, Handler>> handlers = new ConcurrentHashMap<>();
 
@@ -57,22 +58,37 @@ public class Server {
 
             // Читаем стартовую строку
             String requestLine = in.readLine();
-            if (requestLine == null || requestLine.isEmpty()) return;
+            if (requestLine == null || requestLine.isEmpty()) {
+                return;
+            }
             String[] parts = requestLine.split(" ");
-            if (parts.length != 3) return;
+            if (parts.length != 3) {
+                return;
+            }
             String method = parts[0].toUpperCase();
-            String path = parts[1];
+            String fullPath = parts[1];
 
             // есть ли пользовательский хендлер?
             Handler handler = null;
             Map<String, Handler> methodMap = handlers.get(method);
+
+            Request request = null;
             if (methodMap != null) {
+                // Временно создаем Request для получения пути без query string
+                Map<String, String> tempHeaders = new ConcurrentHashMap<>();
+                request = new Request(method, fullPath, tempHeaders, InputStream.nullInputStream());
+                String path = request.getPath();
                 handler = methodMap.get(path);
             }
 
             boolean serveStatic = false;
             Path filePath = null;
             if (handler == null && "GET".equals(method)) {
+                if (request == null) {
+                    Map<String, String> tempHeaders = new ConcurrentHashMap<>();
+                    request = new Request(method, fullPath, tempHeaders, InputStream.nullInputStream());
+                }
+                String path = request.getPath();
                 filePath = Path.of("public", path);
                 serveStatic = Files.exists(filePath) && !Files.isDirectory(filePath);
             }
@@ -102,14 +118,14 @@ public class Server {
                 bodyStream = new LimitedInputStream(socket.getInputStream(), length);
             }
 
+            request = new Request(method, fullPath, headers, bodyStream);
+
             if (handler != null) {
-                Request request = new Request(method, path, headers, bodyStream);
                 handler.handle(request, out);
             } else {
                 String mimeType = Files.probeContentType(filePath);
                 sendFile(out, filePath, mimeType);
             }
-
         } catch (IOException e) {
             System.err.println("Connection error: " + e.getMessage());
         }
@@ -117,21 +133,21 @@ public class Server {
 
     private void send404(BufferedOutputStream out) throws IOException {
         out.write((
-                "HTTP/1.1 404 Not Found\r\n" +
-                        "Content-Length: 0\r\n" +
-                        "Connection: close\r\n\r\n"
-        ).getBytes());
+                          "HTTP/1.1 404 Not Found\r\n" +
+                                  "Content-Length: 0\r\n" +
+                                  "Connection: close\r\n\r\n"
+                  ).getBytes());
         out.flush();
     }
 
     private void sendFile(BufferedOutputStream out, Path filePath, String mimeType) throws IOException {
         long length = Files.size(filePath);
         out.write((
-                "HTTP/1.1 200 OK\r\n" +
-                        "Content-Type: " + mimeType + "\r\n" +
-                        "Content-Length: " + length + "\r\n" +
-                        "Connection: close\r\n\r\n"
-        ).getBytes());
+                          "HTTP/1.1 200 OK\r\n" +
+                                  "Content-Type: " + mimeType + "\r\n" +
+                                  "Content-Length: " + length + "\r\n" +
+                                  "Connection: close\r\n\r\n"
+                  ).getBytes());
         Files.copy(filePath, out);
         out.flush();
     }

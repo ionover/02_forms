@@ -1,13 +1,26 @@
 package org.example;
 
+import org.apache.http.NameValuePair;
+
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 public class Main {
+
     public static void main(String[] args) {
         Server server = new Server();
 
         server.addHandler("GET", "/messages", (request, out) -> {
             String responseBody = "{\"messages\": [\"Hello\", \"World\"]}";
+
+            List<NameValuePair> params = request.getQueryParams();
+            if (!params.isEmpty()) {
+                System.out.println("Query parameters:");
+                for (NameValuePair param: params) {
+                    System.out.println("  " + param.getName() + " = " + param.getValue());
+                }
+            }
+
             byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
             out.write(("HTTP/1.1 200 OK\r\n" +
                     "Content-Type: application/json\r\n" +
