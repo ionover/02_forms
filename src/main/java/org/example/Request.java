@@ -3,7 +3,10 @@ package org.example;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
 
+import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
@@ -18,6 +21,7 @@ public class Request {
     private final Map<String, String> headers;
     private final InputStream body;
     private final List<NameValuePair> queryParams;
+    private List<NameValuePair> postParams;
 
     public Request(String method, String fullPath, Map<String, String> headers, InputStream body) {
         this.method = method;
@@ -36,6 +40,7 @@ public class Request {
 
         this.headers = headers;
         this.body = body;
+        this.postParams = Collections.emptyList();
     }
 
     public String getMethod() {
@@ -58,26 +63,44 @@ public class Request {
         return body;
     }
 
-    /**
-     * Возвращает значение параметра запроса по его имени.
-     *
-     * @param name имя параметра
-     *
-     * @return Optional со значением параметра или пустой Optional, если параметр не найден
-     */
-    public Optional<String> getQueryParam(String name) {
-        return queryParams.stream()
-                          .filter(param -> param.getName().equals(name))
-                          .map(NameValuePair::getValue)
-                          .findFirst();
+    public List<NameValuePair> getQueryParams() {
+        return queryParams;
     }
 
     /**
-     * Возвращает все параметры запроса.
-     *
-     * @return список пар имя-значение параметров запроса
+     * Парсит тело запроса, если оно представлено в формате x-www-form-urlencoded.
      */
-    public List<NameValuePair> getQueryParams() {
-        return queryParams;
+    private void parsePostParams() {
+
+        String contentType = headers.get("Content-Type");
+        if (contentType != null && contentType.startsWith("application/x-www-form-urlencoded")) {
+            try {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
+                StringBuilder bodyContent = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    bodyContent.append(line);
+                }
+
+                if (!bodyContent.isEmpty()) {
+                    postParams = URLEncodedUtils.parse(bodyContent.toString(), StandardCharsets.UTF_8);
+                }
+            } catch (IOException e) {
+                System.err.println("Error parsing POST parameters: " + e.getMessage());
+            }
+        }
+    }
+
+    public List<String> getPostParamValuesByName(String name) {
+        parsePostParams();
+        return postParams.stream()
+                         .filter(param -> param.getName().equals(name))
+                         .map(NameValuePair::getValue)
+                         .toList();
+    }
+
+    public List<NameValuePair> getPostParams() {
+        parsePostParams();
+        return postParams;
     }
 }
